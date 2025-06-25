@@ -4,26 +4,57 @@
 package consul
 
 import (
-	"regexp"
+	"context"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
 )
 
-func TestAccConsulAdminParition_CEBasic(t *testing.T) {
+func TestAccConsulAdminParition_EntBasic(t *testing.T) {
 	providers, client := startTestServer(t)
 
 	resource.Test(t, resource.TestCase{
 		Providers: providers,
 		PreCheck: func() {
-			skipTestOnConsulEnterpriseEdition(t)
+			skipTestOnConsulCommunityEdition(t)
 		},
 		CheckDestroy: testAccCheckConsulACLTokenDestroy(client),
 		Steps: []resource.TestStep{
 			{
-				Config:      testAccConsulAdminPartitionBasic,
-				ExpectError: regexp.MustCompile(`Unexpected response code: 404 \(Invalid URL path: not a recognized HTTP API endpoint\)`),
+				Config: testAccConsulAdminPartitionBasic,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("consul_admin_partition.test", "name", "hello"),
+					resource.TestCheckResourceAttr("consul_admin_partition.test", "description", "world"),
+					resource.TestCheckResourceAttr("consul_admin_partition.test", "disable_gossip", "true"),
+				),
+			},
+			{
+				PreConfig: func() {
+					partitions := client.Partitions()
+					if _, err := partitions.Delete(context.TODO(), "hello", nil); err != nil {
+						t.Fatalf("failed to remove partition: %s", err)
+					}
+				},
+				Config: testAccConsulAdminPartitionBasic,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("consul_admin_partition.test", "name", "hello"),
+					resource.TestCheckResourceAttr("consul_admin_partition.test", "description", "world"),
+					resource.TestCheckResourceAttr("consul_admin_partition.test", "disable_gossip", "true"),
+				),
+			},
+			{
+				ImportState:       true,
+				ResourceName:      "consul_admin_partition.test",
+				ImportStateVerify: true,
 			},
 		},
 	})
 }
+
+const testAccConsulAdminPartitionBasic = `
+resource "consul_admin_partition" "test" {
+	name        = "hello"
+	description = "world"
+        disable_gossip = true
+}
+`
